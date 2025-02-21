@@ -13,6 +13,7 @@ import {
   setMapStyle,
   type ViewState
 } from '@/features/map/mapSlice'
+import { MapLayerMouseEvent } from 'maplibre-gl'
 
 const MAP_STYLES = {
   light: {
@@ -117,18 +118,18 @@ export function MapView() {
   };
 
   // Handle hover interactions
-  const onMouseMove = (evt: any) => {
+  const onMouseMove = (evt: MapLayerMouseEvent) => {
     if (evt.features && evt.features.length > 0) {
       const feature = evt.features[0];
       setHoverInfo({
         x: evt.point.x,
         y: evt.point.y,
         properties: {
-          'County': feature.properties['County'],
-          'Date of Sale (dd/mm/yyyy)': feature.properties['Date of Sale (dd/mm/yyyy)'],
-          'Description of Property': feature.properties['Description of Property'],
-          'Price (€)': feature.properties['Price (€)'],
-          'Property Size Description': feature.properties['Property Size Description']
+          'County': feature.properties['County'] as string,
+          'Date of Sale (dd/mm/yyyy)': feature.properties['Date of Sale (dd/mm/yyyy)'] as string,
+          'Description of Property': feature.properties['Description of Property'] as string,
+          'Price (€)': feature.properties['Price (€)'] as number,
+          'Property Size Description': feature.properties['Property Size Description'] as string
         }
       });
     } else {
