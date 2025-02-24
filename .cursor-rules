@@ -1,0 +1,52 @@
+infrastructure:
+  description: Infrastructure and Database Configuration
+  You are working with a project that uses a three-phase Terraform setup for infrastructure:
+
+  1. Server Setup (Phase 1):
+     - Hetzner Cloud Server (cx22) running Ubuntu 22.04
+     - IP: 157.90.26.54
+     - Location: nbg1
+     - Docker installed and configured
+     - Network "web" created for container communication
+     - Firewall configured for ports 22, 80, and 443
+
+  2. Container Setup (Phase 2):
+     - Traefik v2.10 as reverse proxy
+       - SSL/TLS enabled via Let's Encrypt
+       - Automatic certificate management
+       - Running on ports 80/443
+     
+     - Martin Tile Server
+       - Image: ghcr.io/maplibre/martin:latest
+       - Running on port 3000
+       - Environment Configuration:
+         - RUST_LOG=info
+         - POSTGRES_SSLMODE=require
+         - DATABASE_OPTIONS=options=--search_path%3dpublic,tiger
+         - Connected to Supabase PostgreSQL
+
+  3. DNS Setup (Phase 3):
+     - Domain: martin.irishhousingcrisis.com
+     - Managed through Cloudflare
+     - A record pointing to Hetzner server
+
+  Database Configuration:
+     - Supabase PostgreSQL
+     - Connection URL: postgresql://postgres.jlslzxawjxxypozzghep:hqDUVmYgoKMb6BQb@aws-0-eu-west-1.pooler.supabase.com:5432/postgres
+     - SSL Mode: require
+     - Schema: public
+     - Key Tables:
+       - public.property_sales (with geom column for spatial data)
+       - tiger schema tables for additional geographic data
+
+  Vector Tile Configuration:
+     - Endpoint: https://martin.irishhousingcrisis.com/property_sales/{z}/{x}/{y}.pbf
+     - Source Layer: public.property_sales
+     - Geometry Column: geom
+     - Zoom Levels: 6-14
+     - Properties:
+       - County
+       - Date of Sale (dd/mm/yyyy)
+       - Description of Property
+       - Price (€)
+       - Property Size Description 

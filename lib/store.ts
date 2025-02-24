@@ -3,6 +3,7 @@ import mapReducer from '@/features/map/mapSlice'
 import layersReducer from '@/features/layers/layersSlice'
 import dataReducer from '@/features/data/dataSlice'
 import uiReducer from '@/features/ui/uiSlice'
+import filtersReducer from '@/features/filters/filtersSlice'
 
 export const makeStore = () => {
   return configureStore({
@@ -11,6 +12,7 @@ export const makeStore = () => {
       layers: layersReducer,
       data: dataReducer,
       ui: uiReducer,
+      filters: filtersReducer
     },
     // Enable Redux DevTools in development
     devTools: process.env.NODE_ENV !== 'production',

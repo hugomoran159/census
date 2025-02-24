@@ -2,8 +2,7 @@
 
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useState, useMemo } from 'react'
-import { Map, NavigationControl, Layer, Source } from '@vis.gl/react-maplibre'
-import type { LayerProps } from '@vis.gl/react-maplibre'
+import Map, { NavigationControl, MapRef } from 'react-map-gl/maplibre'
 import { useTheme } from 'next-themes'
 import { useAppDispatch, useAppSelector } from '@/lib/hooks'
 import {
@@ -11,155 +10,193 @@ import {
   selectMapStyle,
   updateViewState,
   setMapStyle,
-  type ViewState
 } from '@/features/map/mapSlice'
-import { MapLayerMouseEvent } from 'maplibre-gl'
+import { selectDateRange, selectFiltersEnabled } from '@/features/filters/filtersSlice'
+import DeckGL from '@deck.gl/react'
+import { MVTLayer } from '@deck.gl/geo-layers'
+import { ViewStateChangeParameters } from '@deck.gl/core'
+import { DataFilterExtension } from '@deck.gl/extensions'
+import { parseDate, dateToTimestamp } from '@/lib/utils/dates'
+import { DateRangeFilter } from '@/components/filters/DateRangeFilter'
 
 const MAP_STYLES = {
   light: {
-    id: 'positron',
-    name: 'Positron Light',
-    url: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+    id: 'light',
+    name: 'Light',
+    url: 'https://api.protomaps.com/styles/v5/light/en.json?key=5d51259c2bf27d6f',
   },
   dark: {
-    id: 'dark-matter',
-    name: 'Dark Matter',
-    url: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+    id: 'dark',
+    name: 'Dark',
+    url: 'https://api.protomaps.com/styles/v5/dark/en.json?key=5d51259c2bf27d6f',
   },
+}
+
+const INITIAL_VIEW_STATE = {
+  longitude: -8.24389,
+  latitude: 53.41291,
+  zoom: 7,
+  bearing: 0,
+  pitch: 0,
+  maxZoom: 20
 }
 
 interface HoverInfo {
-  x: number;
-  y: number;
+  x: number
+  y: number
   properties: {
-    'County': string;
-    'Date of Sale (dd/mm/yyyy)': string;
-    'Description of Property': string;
-    'Price (€)': number;
-    'Property Size Description': string;
-  };
+    'County': string
+    'Date of Sale (dd/mm/yyyy)': string
+    'Description of Property': string
+    'Price (€)': number
+    'Property Size Description': string
+    'formatted_address': string
+  }
 }
 
-const circleLayer: LayerProps = {
-  'id': 'property-points',
-  'type': 'circle',
-  'source': 'property-sales',
-  'source-layer': 'property_sales',
-  'paint': {
-    'circle-radius': [
-      'interpolate',
-      ['linear'],
-      ['zoom'],
-      6, 1,
-      7, 1.2,
-      8, 1.5,
-      9, 2,
-      10, 3,
-      11, 4,
-      12, 5,
-      13, 6,
-      14, 8,
-      15, 10,
-      16, 12,
-      17, 15,
-      18, 20,
-      19, 25
-    ],
-    'circle-color': [
-      'step',
-      ['get', 'Price (€)'],
-      'rgba(0, 255, 0, 0.15)',   // < 100k
-      100000, 'rgba(173, 255, 47, 0.15)',  // 100k-250k
-      250000, 'rgba(255, 255, 0, 0.15)',   // 250k-500k
-      500000, 'rgba(255, 165, 0, 0.15)',   // 500k-1M
-      1000000, 'rgba(255, 69, 0, 0.15)',   // 1M-2M
-      2000000, 'rgba(255, 0, 0, 0.15)'     // > 2M
-    ],
-    'circle-opacity': 0.8,
-    'circle-stroke-width': 1,
-    'circle-stroke-color': [
-      'step',
-      ['get', 'Price (€)'],
-      'rgba(0, 255, 0, 0.3)',    // < 100k
-      100000, 'rgba(173, 255, 47, 0.3)',   // 100k-250k
-      250000, 'rgba(255, 255, 0, 0.3)',    // 250k-500k
-      500000, 'rgba(255, 165, 0, 0.3)',    // 500k-1M
-      1000000, 'rgba(255, 69, 0, 0.3)',    // 1M-2M
-      2000000, 'rgba(255, 0, 0, 0.3)'      // > 2M
-    ]
+interface ViewState {
+  longitude: number
+  latitude: number
+  zoom: number
+  pitch: number
+  bearing: number
+}
+
+interface MVTFeature {
+  properties: {
+    'County': string
+    'Date of Sale (dd/mm/yyyy)': string
+    'Description of Property': string
+    'Price (€)': number
+    'Property Size Description': string
+    'formatted_address': string
   }
-};
+}
 
 export function MapView() {
   const dispatch = useAppDispatch()
   const viewState = useAppSelector(selectViewState)
   const mapStyle = useAppSelector(selectMapStyle)
+  const dateRange = useAppSelector(selectDateRange)
+  const filtersEnabled = useAppSelector(selectFiltersEnabled)
   const { resolvedTheme } = useTheme()
   const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null)
 
-  // Update map style when theme changes
   useEffect(() => {
-    const newStyle = resolvedTheme === 'dark' ? MAP_STYLES.dark : MAP_STYLES.light;
-    dispatch(setMapStyle(newStyle));
-  }, [resolvedTheme, dispatch]);
+    const newStyle = resolvedTheme === 'dark' ? MAP_STYLES.dark : MAP_STYLES.light
+    dispatch(setMapStyle(newStyle))
+  }, [resolvedTheme, dispatch])
 
-  // Vector tile source configuration
-  const vectorSource = useMemo(() => ({
-    type: 'vector' as const,
-    tiles: [`https://census-martin.fly.dev/property_sales/{z}/{x}/{y}.pbf`],
-    minzoom: 0,
-    maxzoom: 14,
-    attribution: 'Property Sales Data'
-  }), []);
-
-  // Handle map movement
-  const onMove = (evt: { viewState: ViewState }) => {
-    dispatch(updateViewState(evt.viewState));
-  };
-
-  // Handle hover interactions
-  const onMouseMove = (evt: MapLayerMouseEvent) => {
-    if (evt.features && evt.features.length > 0) {
-      const feature = evt.features[0];
-      setHoverInfo({
-        x: evt.point.x,
-        y: evt.point.y,
-        properties: {
-          'County': feature.properties['County'] as string,
-          'Date of Sale (dd/mm/yyyy)': feature.properties['Date of Sale (dd/mm/yyyy)'] as string,
-          'Description of Property': feature.properties['Description of Property'] as string,
-          'Price (€)': feature.properties['Price (€)'] as number,
-          'Property Size Description': feature.properties['Property Size Description'] as string
+  const layers = useMemo(() => {
+    return [
+      new MVTLayer({
+        id: 'property-sales',
+        data: 'http://localhost:8080/data/property_sales/{z}/{x}/{y}.pbf',
+        minZoom: 0,
+        maxZoom: 13,
+        pickable: true,
+        getFillColor: d => {
+          const price = d.properties['Price (€)']
+          if (price >= 2000000) return [255, 0, 0]    // Red
+          if (price >= 1000000) return [255, 69, 0]   // Red-Orange
+          if (price >= 500000) return [255, 165, 0]   // Orange
+          if (price >= 250000) return [255, 255, 0]   // Yellow
+          if (price >= 100000) return [173, 255, 47]  // Green-Yellow
+          return [0, 255, 0]                          // Green
+        },
+        getPointRadius: 50,
+        pointRadiusMinPixels: 2,
+        pointRadiusMaxPixels: 8,
+        opacity: 0.6,
+        extensions: [new DataFilterExtension({ filterSize: 1 })],
+        getFilterValue: (d: MVTFeature) => {
+          try {
+            const date = parseDate(d.properties['Date of Sale (dd/mm/yyyy)'])
+            return [date.getTime()]
+          } catch (e) {
+            console.error('Error parsing date:', d.properties['Date of Sale (dd/mm/yyyy)'])
+            return [0] // Return a timestamp that will be filtered out
+          }
+        },
+        filterRange: [dateRange.start, dateRange.end],
+        updateTriggers: {
+          getFilterValue: dateRange,
+          filterRange: dateRange
+        },
+        visible: filtersEnabled,
+        parameters: {
+          depthTest: false
+        },
+        loadOptions: {
+          mvt: {
+            shape: 'Point'
+          }
+        },
+        onHover: info => {
+          if (info.object) {
+            try {
+              const date = parseDate(info.object.properties['Date of Sale (dd/mm/yyyy)'])
+              const timestamp = dateToTimestamp(date)
+              console.log({
+                pointDate: info.object.properties['Date of Sale (dd/mm/yyyy)'],
+                pointTimestamp: timestamp,
+                rangeStart: dateRange.start,
+                rangeEnd: dateRange.end,
+                isInRange: timestamp >= dateRange.start && timestamp <= dateRange.end
+              })
+            } catch (e) {
+              console.error('Error logging date info:', e)
+            }
+            
+            setHoverInfo({
+              x: info.x,
+              y: info.y,
+              properties: {
+                'County': info.object.properties.County,
+                'Date of Sale (dd/mm/yyyy)': info.object.properties['Date of Sale (dd/mm/yyyy)'],
+                'Description of Property': info.object.properties['Description of Property'],
+                'Price (€)': info.object.properties['Price (€)'],
+                'Property Size Description': info.object.properties['Property Size Description'],
+                'formatted_address': info.object.properties.formatted_address
+              }
+            })
+          } else {
+            setHoverInfo(null)
+          }
         }
-      });
-    } else {
-      setHoverInfo(null);
-    }
-  };
+      })
+    ]
+  }, [dateRange, filtersEnabled])
 
-  const onMouseLeave = () => {
-    setHoverInfo(null);
-  };
+  const onViewStateChange = (params: ViewStateChangeParameters) => {
+    const newViewState = params.viewState as ViewState
+    if (newViewState.longitude && newViewState.latitude) {
+      dispatch(updateViewState({
+        longitude: newViewState.longitude,
+        latitude: newViewState.latitude,
+        zoom: newViewState.zoom || 7,
+        pitch: newViewState.pitch || 0,
+        bearing: newViewState.bearing || 0
+      }))
+    }
+  }
 
   return (
     <div className="relative w-full h-full">
-      <Map
-        mapStyle={mapStyle.url}
-        longitude={viewState.longitude}
-        latitude={viewState.latitude}
-        zoom={viewState.zoom}
-        pitch={viewState.pitch}
-        bearing={viewState.bearing}
-        onMove={onMove}
-        interactiveLayerIds={['property-points']}
-        onMouseMove={onMouseMove}
-        onMouseLeave={onMouseLeave}
+      <DeckGL
+        initialViewState={INITIAL_VIEW_STATE}
+        controller={true}
+        layers={layers}
+        onViewStateChange={onViewStateChange}
       >
-        <NavigationControl position="top-right" />
-        <Source id="property-sales" {...vectorSource}>
-          <Layer {...circleLayer} />
-        </Source>
-      </Map>
+        <Map
+          mapStyle={mapStyle.url}
+          reuseMaps
+        >
+          <NavigationControl position="top-right" />
+        </Map>
+      </DeckGL>
+      <DateRangeFilter />
       {hoverInfo && (
         <div 
           style={{
@@ -176,12 +213,15 @@ export function MapView() {
           }}
         >
           <div className="font-bold">{hoverInfo.properties['Description of Property']}</div>
+          <div>{hoverInfo.properties.formatted_address}</div>
           <div>County: {hoverInfo.properties['County']}</div>
-          <div>Price: €{hoverInfo.properties['Price (€)']?.toLocaleString()}</div>
+          <div>Price: €{hoverInfo.properties['Price (€)'].toLocaleString()}</div>
           <div>Date: {hoverInfo.properties['Date of Sale (dd/mm/yyyy)']}</div>
-          <div>Size: {hoverInfo.properties['Property Size Description']}</div>
+          {hoverInfo.properties['Property Size Description'] && (
+            <div>Size: {hoverInfo.properties['Property Size Description']}</div>
+          )}
         </div>
       )}
     </div>
-  );
+  )
 } 

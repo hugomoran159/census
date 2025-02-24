@@ -1,0 +1,26 @@
+{
+  "options": {
+    "paths": {
+      "root": "/data",
+      "fonts": "fonts",
+      "styles": "styles",
+      "mbtiles": "/data"
+    }
+  },
+  "styles": {
+    "property_sales": {
+      "version": 8,
+      "sources": {
+        "property_sales": {
+          "type": "vector",
+          "url": "mbtiles://property_sales.mbtiles"
+        }
+      }
+    }
+  },
+  "data": {
+    "property_sales": {
+      "mbtiles": "property_sales.mbtiles"
+    }
+  }
+} 
