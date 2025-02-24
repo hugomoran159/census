@@ -77,3 +77,5 @@ terraform.rc
 *.parquet
 *.mbtiles
 *.geojson
+/venv/
+/venv/**/*
