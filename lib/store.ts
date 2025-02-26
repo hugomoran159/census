@@ -4,6 +4,8 @@ import layersReducer from '@/features/layers/layersSlice'
 import dataReducer from '@/features/data/dataSlice'
 import uiReducer from '@/features/ui/uiSlice'
 import filtersReducer from '@/features/filters/filtersSlice'
+import geoarrowReducer from '@/features/geoarrow/geoarrowSlice'
+import { apiSlice } from '@/features/api/apiSlice'
 
 export const makeStore = () => {
   return configureStore({
@@ -12,8 +14,14 @@ export const makeStore = () => {
       layers: layersReducer,
       data: dataReducer,
       ui: uiReducer,
-      filters: filtersReducer
+      filters: filtersReducer,
+      geoarrow: geoarrowReducer,
+      [apiSlice.reducerPath]: apiSlice.reducer
     },
+    middleware: (getDefaultMiddleware) =>
+      getDefaultMiddleware({
+        serializableCheck: false // Disable serializable check for non-serializable values like ArrayBuffer
+      }).concat(apiSlice.middleware),
     // Enable Redux DevTools in development
     devTools: process.env.NODE_ENV !== 'production',
   })

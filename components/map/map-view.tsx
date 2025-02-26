@@ -1,8 +1,8 @@
 'use client'
 
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { useEffect, useState, useMemo } from 'react'
-import Map, { NavigationControl, MapRef } from 'react-map-gl/maplibre'
+import { useEffect, useState } from 'react'
+import Map, { NavigationControl } from 'react-map-gl/maplibre'
 import { useTheme } from 'next-themes'
 import { useAppDispatch, useAppSelector } from '@/lib/hooks'
 import {
@@ -12,12 +12,17 @@ import {
   setMapStyle,
 } from '@/features/map/mapSlice'
 import { selectDateRange, selectFiltersEnabled } from '@/features/filters/filtersSlice'
+import { 
+  selectGeoArrowLayers, 
+  selectGeoArrowLoading, 
+  selectHoverInfo,
+  selectSelectedPointData
+} from '@/features/geoarrow/geoarrowSlice'
 import DeckGL from '@deck.gl/react'
-import { MVTLayer } from '@deck.gl/geo-layers'
 import { ViewStateChangeParameters } from '@deck.gl/core'
-import { DataFilterExtension } from '@deck.gl/extensions'
-import { parseDate, dateToTimestamp } from '@/lib/utils/dates'
-import { DateRangeFilter } from '@/components/filters/DateRangeFilter'
+// Remove DateRangeFilter import
+import dynamic from 'next/dynamic'
+import { ZoomIndicator } from './zoom-indicator'
 
 const MAP_STYLES = {
   light: {
@@ -41,19 +46,6 @@ const INITIAL_VIEW_STATE = {
   maxZoom: 20
 }
 
-interface HoverInfo {
-  x: number
-  y: number
-  properties: {
-    'County': string
-    'Date of Sale (dd/mm/yyyy)': string
-    'Description of Property': string
-    'Price (€)': number
-    'Property Size Description': string
-    'formatted_address': string
-  }
-}
-
 interface ViewState {
   longitude: number
   latitude: number
@@ -62,111 +54,30 @@ interface ViewState {
   bearing: number
 }
 
-interface MVTFeature {
-  properties: {
-    'County': string
-    'Date of Sale (dd/mm/yyyy)': string
-    'Description of Property': string
-    'Price (€)': number
-    'Property Size Description': string
-    'formatted_address': string
+// Create a client-side only component for the GeoArrow functionality
+const GeoArrowMapLayer = dynamic(
+  () => import('@/components/map/geo-arrow-layer').then(mod => mod.GeoArrowMapLayer),
+  { 
+    ssr: false,
+    // This is a workaround for TypeScript errors with dynamic imports
+    loading: () => null
   }
-}
+) as any; // Use 'any' type to avoid TypeScript errors with props
 
 export function MapView() {
   const dispatch = useAppDispatch()
   const viewState = useAppSelector(selectViewState)
   const mapStyle = useAppSelector(selectMapStyle)
-  const dateRange = useAppSelector(selectDateRange)
-  const filtersEnabled = useAppSelector(selectFiltersEnabled)
+  const isLoading = useAppSelector(selectGeoArrowLoading)
+  const layers = useAppSelector(selectGeoArrowLayers)
+  const selectedPointData = useAppSelector(selectSelectedPointData)
+
   const { resolvedTheme } = useTheme()
-  const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null)
 
   useEffect(() => {
     const newStyle = resolvedTheme === 'dark' ? MAP_STYLES.dark : MAP_STYLES.light
     dispatch(setMapStyle(newStyle))
   }, [resolvedTheme, dispatch])
-
-  const layers = useMemo(() => {
-    return [
-      new MVTLayer({
-        id: 'property-sales',
-        data: 'http://localhost:8080/data/property_sales/{z}/{x}/{y}.pbf',
-        minZoom: 0,
-        maxZoom: 13,
-        pickable: true,
-        getFillColor: d => {
-          const price = d.properties['Price (€)']
-          if (price >= 2000000) return [255, 0, 0]    // Red
-          if (price >= 1000000) return [255, 69, 0]   // Red-Orange
-          if (price >= 500000) return [255, 165, 0]   // Orange
-          if (price >= 250000) return [255, 255, 0]   // Yellow
-          if (price >= 100000) return [173, 255, 47]  // Green-Yellow
-          return [0, 255, 0]                          // Green
-        },
-        getPointRadius: 50,
-        pointRadiusMinPixels: 2,
-        pointRadiusMaxPixels: 8,
-        opacity: 0.6,
-        extensions: [new DataFilterExtension({ filterSize: 1 })],
-        getFilterValue: (d: MVTFeature) => {
-          try {
-            const date = parseDate(d.properties['Date of Sale (dd/mm/yyyy)'])
-            return [date.getTime()]
-          } catch (e) {
-            console.error('Error parsing date:', d.properties['Date of Sale (dd/mm/yyyy)'])
-            return [0] // Return a timestamp that will be filtered out
-          }
-        },
-        filterRange: [dateRange.start, dateRange.end],
-        updateTriggers: {
-          getFilterValue: dateRange,
-          filterRange: dateRange
-        },
-        visible: filtersEnabled,
-        parameters: {
-          depthTest: false
-        },
-        loadOptions: {
-          mvt: {
-            shape: 'Point'
-          }
-        },
-        onHover: info => {
-          if (info.object) {
-            try {
-              const date = parseDate(info.object.properties['Date of Sale (dd/mm/yyyy)'])
-              const timestamp = dateToTimestamp(date)
-              console.log({
-                pointDate: info.object.properties['Date of Sale (dd/mm/yyyy)'],
-                pointTimestamp: timestamp,
-                rangeStart: dateRange.start,
-                rangeEnd: dateRange.end,
-                isInRange: timestamp >= dateRange.start && timestamp <= dateRange.end
-              })
-            } catch (e) {
-              console.error('Error logging date info:', e)
-            }
-            
-            setHoverInfo({
-              x: info.x,
-              y: info.y,
-              properties: {
-                'County': info.object.properties.County,
-                'Date of Sale (dd/mm/yyyy)': info.object.properties['Date of Sale (dd/mm/yyyy)'],
-                'Description of Property': info.object.properties['Description of Property'],
-                'Price (€)': info.object.properties['Price (€)'],
-                'Property Size Description': info.object.properties['Property Size Description'],
-                'formatted_address': info.object.properties.formatted_address
-              }
-            })
-          } else {
-            setHoverInfo(null)
-          }
-        }
-      })
-    ]
-  }, [dateRange, filtersEnabled])
 
   const onViewStateChange = (params: ViewStateChangeParameters) => {
     const newViewState = params.viewState as ViewState
@@ -181,13 +92,29 @@ export function MapView() {
     }
   }
 
+  // These handlers are now just for the component-level UI updates
+  const handleHoverInfo = (info: any) => {
+    // No need to set state here as it's handled in Redux
+    // This is just a pass-through for the component
+  };
+
+  const handleLoadingState = (loading: boolean) => {
+    // No need to set state here as it's handled in Redux
+    // This is just a pass-through for the component
+  };
+
   return (
     <div className="relative w-full h-full">
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 z-10">
+          <div className="text-white">Loading data...</div>
+        </div>
+      )}
       <DeckGL
         initialViewState={INITIAL_VIEW_STATE}
         controller={true}
-        layers={layers}
         onViewStateChange={onViewStateChange}
+        layers={layers} // Use layers from Redux
       >
         <Map
           mapStyle={mapStyle.url}
@@ -196,32 +123,19 @@ export function MapView() {
           <NavigationControl position="top-right" />
         </Map>
       </DeckGL>
-      <DateRangeFilter />
-      {hoverInfo && (
-        <div 
-          style={{
-            position: 'absolute',
-            zIndex: 1,
-            pointerEvents: 'none',
-            left: hoverInfo.x,
-            top: hoverInfo.y,
-            backgroundColor: 'white',
-            padding: '8px',
-            borderRadius: '4px',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-            maxWidth: '300px'
-          }}
-        >
-          <div className="font-bold">{hoverInfo.properties['Description of Property']}</div>
-          <div>{hoverInfo.properties.formatted_address}</div>
-          <div>County: {hoverInfo.properties['County']}</div>
-          <div>Price: €{hoverInfo.properties['Price (€)'].toLocaleString()}</div>
-          <div>Date: {hoverInfo.properties['Date of Sale (dd/mm/yyyy)']}</div>
-          {hoverInfo.properties['Property Size Description'] && (
-            <div>Size: {hoverInfo.properties['Property Size Description']}</div>
-          )}
-        </div>
-      )}
+      
+      {/* Add the zoom indicator */}
+      <ZoomIndicator zoom={viewState.zoom} />
+      
+      {/* Render the GeoArrowMapLayer component but don't use its direct output */}
+      <div style={{ display: 'none' }}>
+        <GeoArrowMapLayer 
+          onHoverInfo={handleHoverInfo}
+          onLoadingState={handleLoadingState}
+        />
+      </div>
+      
+      {/* Removed the hover popup */}
     </div>
   )
 } 

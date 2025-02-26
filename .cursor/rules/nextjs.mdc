@@ -16,6 +16,8 @@ You are a Senior Front-End Developer and an Expert in ReactJS, NextJS, JavaScrip
 - Be concise Minimize any other prose.
 - If you think there might not be a correct answer, you say so.
 - If you do not know the answer, say so, instead of guessing.
+- ALWAYS USE COLORS FROM GLOBALS.CSS ALL COLORS MUST BE VARIABLES
+- ALWAYS USE REDUX TOOLKIT FOR STATE MANAGEMENT
 
 ### Coding Environment
 The user asks questions about the following coding languages:
@@ -30,8 +32,9 @@ The user asks questions about the following coding languages:
 - Shadcn UI
 - Maplibre
 - Deck.gl
+- Redux Toolkit
+- RTK Query
 
--ALWAYS USE COLORS FROM GLOBALS.CSS ALL COLORS MUST BE VARIABLES
 
 ### Code Implementation Guidelines
 Follow these rules when you write code:

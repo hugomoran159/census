@@ -79,3 +79,4 @@ terraform.rc
 *.geojson
 /venv/
 /venv/**/*
+*.arrow
